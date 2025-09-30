@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { 
   DollarSign, TrendingUp, TrendingDown, AlertTriangle, Clock,
-  Target, BarChart3, PieChart, Activity, CheckCircle, Timer, Download, RefreshCw
+  Target, BarChart3, PieChart, Activity, CheckCircle, Timer, Download, RefreshCw, Database
 } from "lucide-react";
 import { EDIFile } from "@/pages/Index";
 import { parseEDIContent } from "@/utils/ediParser";
+import { useMetrics, fetchCMSData } from "@/hooks/useMetrics";
 
 interface FinancialMetrics {
   totalPremiumFlow: number;
@@ -51,6 +52,9 @@ interface FinancialImpactProps {
 export const FinancialImpact = ({ files }: FinancialImpactProps) => {
   const { toast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isFetchingCMS, setIsFetchingCMS] = useState(false);
+  const { data: metricsData, isLoading, refetch } = useMetrics();
+  
   const [metrics, setMetrics] = useState<FinancialMetrics>({
     totalPremiumFlow: 0,
     totalPayments: 0,
@@ -68,6 +72,79 @@ export const FinancialImpact = ({ files }: FinancialImpactProps) => {
 
   const [paymentFlows, setPaymentFlows] = useState<PaymentFlow[]>([]);
   const [costBreakdown, setCostBreakdown] = useState<CostBreakdown[]>([]);
+  
+  // Update metrics when real data is loaded
+  useEffect(() => {
+    if (metricsData) {
+      setMetrics({
+        totalPremiumFlow: metricsData.financial.totalPremium,
+        totalPayments: metricsData.financial.paymentProcessing,
+        averagePaymentDelay: metricsData.financial.avgPaymentDelay,
+        cashFlowImpact: metricsData.financial.totalPremium * 0.001,
+        processingCosts: metricsData.processing.totalFiles * 5,
+        costSavings: metricsData.financial.netCostSavings,
+        revenueRecovery: metricsData.financial.revenueRecovery,
+        errorCosts: metricsData.errors.total * 150,
+        complianceSavings: metricsData.financial.complianceSavings,
+        automationSavings: metricsData.financial.automationSavings,
+        roi: metricsData.financial.roi,
+        paybackPeriod: metricsData.financial.paybackMonths
+      });
+      
+      // Update cost breakdown with real data
+      const totalSavings = metricsData.financial.automationSavings + 
+                          metricsData.financial.complianceSavings + 
+                          metricsData.financial.revenueRecovery;
+      const totalCosts = (metricsData.processing.totalFiles * 5) + (metricsData.errors.total * 150);
+      
+      setCostBreakdown([
+        {
+          category: 'Automation Savings',
+          amount: metricsData.financial.automationSavings,
+          percentage: (metricsData.financial.automationSavings / totalSavings) * 100,
+          trend: 'up',
+          description: 'Savings from automated vs manual processing'
+        },
+        {
+          category: 'Compliance Savings',
+          amount: metricsData.financial.complianceSavings,
+          percentage: (metricsData.financial.complianceSavings / totalSavings) * 100,
+          trend: 'up',
+          description: 'Reduced compliance and audit costs'
+        },
+        {
+          category: 'Revenue Recovery',
+          amount: metricsData.financial.revenueRecovery,
+          percentage: (metricsData.financial.revenueRecovery / totalSavings) * 100,
+          trend: 'up',
+          description: 'Additional revenue from improved accuracy'
+        }
+      ]);
+    }
+  }, [metricsData]);
+  
+  const handleFetchCMSData = async () => {
+    setIsFetchingCMS(true);
+    try {
+      await fetchCMSData();
+      toast({
+        title: "CMS Data Loaded",
+        description: "Sample EDI data has been fetched and is being processed.",
+      });
+      // Wait a bit for processing then refetch metrics
+      setTimeout(() => {
+        refetch();
+        setIsFetchingCMS(false);
+      }, 3000);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to fetch CMS data",
+        variant: "destructive"
+      });
+      setIsFetchingCMS(false);
+    }
+  };
 
   const financialAnalysis = useMemo(() => {
     if (!files.length) {
@@ -348,14 +425,32 @@ export const FinancialImpact = ({ files }: FinancialImpactProps) => {
     );
   };
 
-  if (!files.length) {
+  if (!metricsData && !isLoading) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="p-8 text-center space-y-4">
+            <DollarSign className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Financial Impact Analysis</h3>
+            <p className="text-muted-foreground">Load sample CMS data or upload EDI files to analyze premium flows, payment delays, and cost savings</p>
+            <Button onClick={handleFetchCMSData} disabled={isFetchingCMS}>
+              <Database className="h-4 w-4 mr-2" />
+              {isFetchingCMS ? 'Loading Sample Data...' : 'Load CMS Sample Data'}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
+  if (isLoading) {
     return (
       <div className="p-6">
         <Card>
           <CardContent className="p-8 text-center">
-            <DollarSign className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Financial Impact Analysis</h3>
-            <p className="text-muted-foreground">Upload EDI files to analyze premium flows, payment delays, and cost savings</p>
+            <RefreshCw className="h-12 w-12 text-muted-foreground mx-auto mb-4 animate-spin" />
+            <h3 className="text-lg font-semibold mb-2">Loading Financial Data</h3>
+            <p className="text-muted-foreground">Computing real-time metrics...</p>
           </CardContent>
         </Card>
       </div>
@@ -375,19 +470,24 @@ export const FinancialImpact = ({ files }: FinancialImpactProps) => {
         <div className="flex gap-2">
           <Button 
             variant="outline" 
+            onClick={handleFetchCMSData}
+            disabled={isFetchingCMS}
+          >
+            <Database className={`h-4 w-4 mr-2 ${isFetchingCMS ? 'animate-spin' : ''}`} />
+            {isFetchingCMS ? 'Loading...' : 'Load Sample Data'}
+          </Button>
+          <Button 
+            variant="outline" 
             onClick={() => {
               setIsRefreshing(true);
+              refetch();
               toast({
                 title: "Refreshing Financial Data",
                 description: "Updating financial impact metrics...",
               });
               setTimeout(() => {
                 setIsRefreshing(false);
-                toast({
-                  title: "Data Updated",
-                  description: "Financial metrics have been refreshed.",
-                });
-              }, 2000);
+              }, 1000);
             }}
             disabled={isRefreshing}
           >

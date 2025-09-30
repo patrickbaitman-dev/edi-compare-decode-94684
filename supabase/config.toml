@@ -1,0 +1,10 @@
+project_id = "xolkhxkxdtauoxwecwlg"
+
+[functions.fetch-cms-data]
+verify_jwt = false
+
+[functions.process-edi-file]
+verify_jwt = false
+
+[functions.get-metrics]
+verify_jwt = false
